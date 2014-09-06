@@ -1,0 +1,197 @@
+#!/usr/bin/env python
+# COPYRIGHT
+# 
+# This software is Copyright (c)  2011 NETWAYS GmbH, Gunnar Beutner
+#                                 <support@netways.de>
+# 
+# (Except where explicitly superseded by other copyright notices)
+# 
+# LICENSE
+# 
+# This work is made available to you under the terms of Version 2 of
+# the GNU General Public License. A copy of that license should have
+# been provided with this software, but in any event can be snarfed
+# from http://www.fsf.org.
+# 
+# This work is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301 or visit their web page on the internet at
+# http://www.fsf.org.
+# 
+# 
+# CONTRIBUTION SUBMISSION POLICY:
+# 
+# (The following paragraph is not intended to limit the rights granted
+# to you to modify and distribute this software under the terms of
+# the GNU General Public License and is only of importance to you if
+# you choose to contribute your changes and enhancements to the
+# community by submitting them to NETWAYS GmbH.)
+# 
+# By intentionally submitting any modifications, corrections or
+# derivatives to this work, or any other work intended for use with
+# this Software, to NETWAYS GmbH, you confirm that
+# you are the copyright holder for those contributions and you grant
+# NETWAYS GmbH a nonexclusive, worldwide, irrevocable,
+# royalty-free, perpetual, license to use, copy, create derivative
+# works based on those contributions, and sublicense and distribute
+# those contributions and any derivatives thereof.
+# 
+# Nagios and the Nagios logo are registered trademarks of Ethan Galstad.
+
+import sys
+import re
+import socket
+import threading
+from nagaconda import Plugin
+
+helptext = """
+Example:
+
+./check_kentix -h <host> \\
+    -w check_kentix::sensor_0::temp=~:25 \\
+    -c check_kentix::sensor_0::temp=~:30 \\
+    -c check_kentix::sensor_0::active=1:
+
+This check would be CRITICAL if one of the following conditions are met:
+-The check request fails (wrong IP address, device unavailable, etc.).
+-The first sensor's temperature value is above 30.
+-The first sensor is not active.
+
+The check would return a WARNING if the temperature value is above 25 unless
+one of the CRITICAL conditions were encountered - in which case
+the CRITICAL condition takes precedence.
+"""
+
+plugin = Plugin("Checks the status of Kentix devices.",
+                "1.0", helptext)
+
+plugin.add_option('h', 'host', 'The hostname of the device.', required=True)
+plugin.add_option('p', 'port', 'The port of the device (default: 2101).')
+plugin.add_option('t', 'timeout', 'Socket timeout (in seconds, default: 10)')
+
+plugin.enable_status('warning')
+plugin.enable_status('critical')
+
+plugin.start()
+
+re_dev = re.compile('^AT-R-DEV=[0-9]+,(.*)$')
+re_vals = re.compile('^AT-R-VAL=(.*)$')
+
+def kentixstr_to_python(s):
+    return s.strip('"')
+
+def get_dev(fds, devnum):
+    (writefd, readfd) = fds
+
+    writefd.write("AT-R-DEV=" + str(devnum) + "\r\n")
+    writefd.flush()
+
+    while True:
+        line = readfd.readline().rstrip()
+
+        match = re_dev.match(line)
+
+        if match:
+            return match.group(1).split(',')
+
+def get_vals(fds):
+    (writefd, readfd) = fds
+
+    writefd.write("AT-R-VAL\r\n")
+    writefd.flush()
+
+    while True:
+        line = readfd.readline().rstrip()
+
+        match = re_vals.match(line)
+
+        if match:
+            return match.group(1).split(',')[:-1]
+
+def parse_kentix_value(val):
+    try:
+        if val == '':
+            return ''
+        elif val[0] == '"':
+            return val.strip('"')
+        else:
+            return float(val)
+    except:
+        return 0
+
+def get_checkresult():
+    global devs, vals
+
+    try:
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect((plugin.options.host, 2101))
+        fds = (client.makefile("wb"), client.makefile("rb"))
+
+        devs = [map(parse_kentix_value, get_dev(fds, i)) for i in range(10)]
+        vals = map(parse_kentix_value, get_vals(fds))
+    except socket.error, e:
+        plugin.set_critical()
+        plugin.set_status_message("Could not check device status: " + str(e))
+        plugin.finish()
+
+devs = []
+vals = []
+
+thread = threading.Thread(target=get_checkresult)
+thread.daemon = True
+thread.start()
+
+timeout = plugin.options.timeout
+
+if timeout == None:
+    timeout = 10
+
+thread.join(timeout)
+
+if thread.is_alive():
+    plugin.set_critical()
+    plugin.set_status_message("Timeout while waiting for check result.")
+    plugin.finish()
+
+for i in range(len(devs)):
+    dev = devs[i]
+
+    plugin.set_value('check_kentix::sensor_%d::active' % (i), int(dev[0]))
+
+    if dev[0] == '0':
+        continue
+
+    devvals = vals[i * 10:(i + 1) * 10]
+
+    info = {
+        'temp': devvals[1],
+        'hum': devvals[2],
+        'dev_point': devvals[3],
+        'radar': devvals[4],
+        'co': devvals[5],
+        'dig_in1': devvals[6],
+        'dig_in2': devvals[7],
+        'ext_power': devvals[8],
+        'init': devvals[9],
+        'config_temp_min': dev[2],
+        'config_temp_max': dev[3],
+        'config_temp_offset': dev[4],
+        'config_humidity': dev[5],
+        'config_dew_point': dev[6],
+        'config_motion': dev[7],
+        'config_co': dev[8],
+        'config_alarm_levels': dev[10],
+        'config_zones': dev[11],
+        'config_arm_delay': dev[12],
+    }
+
+    for key, value in info.items():
+        plugin.set_value('check_kentix::sensor_%d::%s' % (i, key), float(value))
+
+plugin.finish()
