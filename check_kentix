@@ -133,9 +133,9 @@ def get_checkresult():
         client.connect((plugin.options.host, 2101))
         fds = (client.makefile("wb"), client.makefile("rb"))
 
-        devs = [map(parse_kentix_value, get_dev(fds, i)) for i in range(10)]
-        vals = map(parse_kentix_value, get_vals(fds))
-    except socket.error, e:
+        devs = [list(map(parse_kentix_value, get_dev(fds, i))) for i in range(10)]
+        vals = list(map(parse_kentix_value, get_vals(fds)))
+    except socket.error as e:
         plugin.set_critical()
         plugin.set_status_message("Could not check device status: " + str(e))
         plugin.finish()
@@ -191,7 +191,7 @@ for i in range(len(devs)):
         'config_arm_delay': dev[12],
     }
 
-    for key, value in info.items():
+    for key, value in list(info.items()):
         plugin.set_value('check_kentix::sensor_%d::%s' % (i, key), float(value))
 
 plugin.finish()
