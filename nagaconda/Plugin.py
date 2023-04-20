@@ -152,7 +152,7 @@ class Plugin:
         if len(range_list) < threshold:
             if range_type not in self.__req_option:
                 return
-            raise UserWarning, (
+            raise UserWarning(
                 "Please set part %s of the %s threshold!" % (
                 threshold, range_type))
 
@@ -194,7 +194,7 @@ class Plugin:
 
         opt_usage = "-%s %s" % (flag, name.upper())
 
-        if kwargs.has_key('required') and kwargs['required'] is True:
+        if 'required' in kwargs and kwargs['required'] is True:
             self.__req_option.append(name)
         else:
             opt_usage = "[%s]" % opt_usage
@@ -276,7 +276,7 @@ class Plugin:
 
         perfs = []
 
-        for (perf_name, perf_dict) in self.__perf.items():
+        for (perf_name, perf_dict) in list(self.__perf.items()):
 
             perfs.append('%s=%s%s;%s;%s;%s;%s' % (
                 perf_name, perf_dict['val'], perf_dict['scale'] or '',
@@ -293,7 +293,7 @@ class Plugin:
         if self.__exit_message is not None:
             exit_status += ', %s' % self.__exit_message
 
-        print 'Status ' + exit_status + perf_string
+        print('Status ' + exit_status + perf_string)
         sys.exit(exit_value)
 
     def set_value(self, name, val, **kwargs):
@@ -346,20 +346,20 @@ class Plugin:
         val_dict = {'val': val, 'min': None, 'max': None, 'scale': None,
             'threshold': 1, 'state': 'ok'}
 
-        if kwargs.has_key('lowest'):
+        if 'lowest' in kwargs:
             val_dict['min'] = float(kwargs.get('lowest'))
 
-        if kwargs.has_key('highest'):
+        if 'highest' in kwargs:
             val_dict['max'] = float(kwargs.get('highest'))
 
-        if kwargs.has_key('threshold'):
+        if 'threshold' in kwargs:
             val_dict['threshold'] = kwargs['threshold']
 
         # Nagios actually understands most byte and time oriented scales.
         # The developer docs also list a counter scale, but we're not certain
         # if any plugin has ever used that. Only accept known scales.
 
-        if kwargs.has_key('scale'):
+        if 'scale' in kwargs:
             scale = kwargs.get('scale')
 
             if scale.upper() in ('B', 'KB', 'MB', 'GB', 'TB'):
@@ -467,7 +467,7 @@ class Plugin:
         :type message: string
 
         """
-        print 'Status Unknown: ' + message
+        print('Status Unknown: ' + message)
         sys.exit(3)
 
 def convert_range(option, opt_str, value, parser):
@@ -504,7 +504,7 @@ def convert_range(option, opt_str, value, parser):
         # a minimum. We'll start our ranges at infinity so we don't have to
         # worry about complex testing logic.
 
-        bottom = -float('infinity')
+        bottom = 0
         top = float('infinity')
 
         if part.find(':') > 0:
@@ -514,12 +514,13 @@ def convert_range(option, opt_str, value, parser):
             else:
                 top = float(top)
 
-            if bottom == '~':
+            if bottom == '':
+                bottom = 0
+            elif bottom == '~':
                 bottom = -float('infinity')
             else:
                 bottom = float(bottom)
         else:
-            bottom = 0
             top = float(part)
 
         # Place bottom, top, and inside into a single entry for each found
