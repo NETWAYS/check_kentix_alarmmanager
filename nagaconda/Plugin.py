@@ -504,7 +504,7 @@ def convert_range(option, opt_str, value, parser):
         # a minimum. We'll start our ranges at infinity so we don't have to
         # worry about complex testing logic.
 
-        bottom = -float('infinity')
+        bottom = 0
         top = float('infinity')
 
         if part.find(':') > 0:
@@ -514,12 +514,13 @@ def convert_range(option, opt_str, value, parser):
             else:
                 top = float(top)
 
-            if bottom == '~':
+            if bottom == '':
+                bottom = 0
+            elif bottom == '~':
                 bottom = -float('infinity')
             else:
                 bottom = float(bottom)
         else:
-            bottom = 0
             top = float(part)
 
         # Place bottom, top, and inside into a single entry for each found
